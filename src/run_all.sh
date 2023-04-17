@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ARG_DEVICE=--device=${1:-'cpu')}
+ARG_DEVICE=--device=${1:-'cpu'}
 
 # Q1
 python3 main.py --task run_ft --model bert-tiny,bert-med --dataset amazon --k 1,8,128 $ARG_DEVICE
