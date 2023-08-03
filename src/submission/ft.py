@@ -19,11 +19,7 @@ import random
 DEVICE = os.environ["DEVICE"] if "DEVICE" in os.environ else "cpu"
 
 if DEVICE == "gpu" and torch.backends.mps.is_available() and torch.backends.mps.is_built():
-    # on MPS the metrics don't improve ... Waiting for PyTorch 2.0
-    # device = torch.device("mps")
-
-    # Due to the above, default for now to cpu
-    DEVICE = torch.device("cpu")
+    DEVICE = torch.device("mps")
 elif DEVICE == "gpu" and torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 else:
@@ -371,7 +367,9 @@ def run_ft(models: List[str], datasets: List[str], ks: List[int], modes: List[st
                 model, tokenizer = utils.get_model_and_tokenizer(model_name, transformers.AutoModelForSequenceClassification, num_labels=5)
             else:
                 model, tokenizer = utils.get_model_and_tokenizer(model_name, transformers.AutoModelForCausalLM)
+
             stop_tokens = utils.stop_tokens(tokenizer)
+
 
             for k in ks:
                 print(f'Fine-tuning {model_name} on {dataset} with k={k} and mode={mode}')
