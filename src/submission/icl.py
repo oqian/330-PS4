@@ -20,11 +20,7 @@ import utils
 DEVICE = os.environ["DEVICE"] if "DEVICE" in os.environ else "cpu"
 
 if DEVICE == "gpu" and torch.backends.mps.is_available() and torch.backends.mps.is_built():
-    # on MPS the metrics don't improve ... Waiting for PyTorch 2.0
-    # device = torch.device("mps")
-
-    # Due to the above, default for now to cpu
-    DEVICE = torch.device("cpu")
+    DEVICE = torch.device("mps")
 elif DEVICE == "gpu" and torch.cuda.is_available():
     DEVICE = torch.device("cuda")
 else:
@@ -138,6 +134,7 @@ def run_icl(models: List[str], datasets_: List[str], ks: List[int], prompt_modes
         utils.fix_random_seeds()
 
         model, tokenizer = utils.get_model_and_tokenizer(model_name, transformers.AutoModelForCausalLM)
+                
         stop_tokens = utils.stop_tokens(tokenizer)
         model.to(DEVICE)
 
