@@ -4,6 +4,7 @@ import transformers
 import logging
 import random
 import numpy as np
+import os
 import torch
 
 logging.basicConfig()
@@ -88,8 +89,16 @@ def get_dataset(dataset: str, n_train: int, n_val: int = 100):
         d = datasets.Dataset.from_dict(data)
         return d[:n_train], d[n_train:n_train + n_val]
     elif dataset == 'amazon':
-        d = datasets.load_dataset('amazon_us_reviews', 'Video_v1_00')['train']
-        filter_fn = lambda rows: ['sex' not in r.lower() for r in rows['review_body']]
+        # d = datasets.load_dataset('amazon_us_reviews', 'Video_v1_00')['train']
+        data_files = "data/amazon_reviews_us_Video_v1_00.csv"
+        try:
+            d = datasets.load_dataset("csv", data_files=data_files)["train"]
+        except FileNotFoundError:
+            print(
+                "PLEASE DOWNLOAD THE AMAZON DATASET FROM https://drive.google.com/file/d/1UMj_oWyGH4xorNkXyPrqIHQJn4CydDUd/view?usp=sharing AND PLACE IT IN data/amazon_reviews_us_Video_v1_00.csv"
+            )
+            exit(1)
+        filter_fn = lambda rows: [r is None or 'sex' not in r.lower() for r in rows['review_body']]
         d = d.filter(filter_fn, batched=True, batch_size=None)
         x = d['review_body']
         y = [s - 1 for s in d['star_rating']]
