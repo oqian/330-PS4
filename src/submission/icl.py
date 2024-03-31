@@ -58,7 +58,28 @@ def get_icl_prompts(
     prompt = ''
 
     ### START CODE HERE ###
-    pass
+    k = len(support_inputs)
+    if k > 0:
+        indices = list(range(k))
+        np.random.shuffle(indices)
+        for idx in indices:
+            if prompt_mode == "qa":
+                prompt += support_inputs[idx] + " In the " + support_labels[idx] + "."
+            elif prompt_mode == "none":
+                prompt += support_inputs[idx] + " " + support_labels[idx]
+            elif prompt_mode == "tldr":
+                prompt += support_inputs[idx] + " TL;DR: " + support_labels[idx]
+            elif prompt_mode == "custom":
+                prompt += "passage: " + support_inputs[idx] + " summarization: " + support_labels[idx]
+
+    if prompt_mode == "qa":
+        prompt += " " + test_input + " In the" # Refer to Note 1 in assignment - no space at the end of prompt
+    elif prompt_mode == "none":
+        prompt += " " + test_input
+    elif prompt_mode == "tldr":
+        prompt += " " + test_input + " TL;DR:"
+    elif prompt_mode == "custom":
+        prompt += "passage: " + test_input + " summarization:"
     ### END CODE HERE ###
 
     return prompt
@@ -119,7 +140,18 @@ def do_sample(model, input_ids, stop_tokens, max_tokens):
     sampled_tokens = []
 
     ### START CODE HERE ###
-    pass
+    for _ in range(max_tokens):
+        with torch.inference_mode():
+            output = model(input_ids)
+        logits = output["logits"]
+        greedy_token = logits[0, -1, :].argmax(dim=-1)
+
+        if greedy_token.item() in stop_tokens:
+            break
+        else:
+            sampled_tokens.append(greedy_token.item())
+
+        input_ids = torch.cat([input_ids, greedy_token.view(1, -1)], dim=-1)
     ### END CODE HERE ###
 
     return sampled_tokens
@@ -178,7 +210,15 @@ def run_icl(models: List[str], datasets_: List[str], ks: List[int], prompt_modes
                             decoded_prediction = ''
 
                             ### START CODE HERE ###
-                            pass
+                            prompt = get_icl_prompts(
+                                support_inputs=support_x,
+                                support_labels=support_y,
+                                test_input=test_input,
+                                prompt_mode=prompt_mode)
+                            tokens = tokenizer.encode(prompt, return_tensors='pt')
+                            tokens = tokens.to(DEVICE)
+                            sampled_tokens = do_sample(model, tokens, stop_tokens, max_tokens)
+                            decoded_prediction = tokenizer.decode(sampled_tokens, skip_special_tokens=True)
                             ### END CODE HERE ###
 
                             predictions.append(decoded_prediction)

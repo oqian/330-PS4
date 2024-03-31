@@ -47,7 +47,9 @@ class LoRAConv1DWrapper(nn.Module):
         self.lora_A, self.lora_B = None, None
         
         ### START CODE HERE ###
-        pass
+        d1, d2 = self.base_module.weight.shape
+        self.A = nn.Parameter(torch.empty(d1, lora_rank, device=DEVICE))
+        self.B = nn.Parameter(torch.empty(d2, lora_rank, device=DEVICE))
         ### END CODE HERE ###
 
 
@@ -59,7 +61,7 @@ class LoRAConv1DWrapper(nn.Module):
         ###
         #############################
         ### START CODE HERE ###
-        pass
+        return self.base_module(x) + (x @ self.A @ self.B.T)
         ### END CODE HERE ###
 
 
@@ -79,23 +81,30 @@ def parameters_to_fine_tune(model: nn.Module, mode: str) -> List:
 
     if mode == 'all':
         ### START CODE HERE ###
-        pass
+        params = model.parameters()
+        return params
         ### END CODE HERE ###
     elif mode == 'last':
         ### START CODE HERE ###
-        pass
+        params = model.transformer.h[-2:].parameters()
+        return params
         ### END CODE HERE ###
     elif mode == 'first':
         ### START CODE HERE ###
-        pass
+        params = model.transformer.h[0:2].parameters()
+        return params
         ### END CODE HERE ###
     elif mode == 'middle':
         ### START CODE HERE ###
-        pass
+        mid_layer = len(model.transformer.h) // 2
+        params = model.transformer.h[mid_layer:mid_layer + 2].parameters()
+        return params
         ### END CODE HERE ###
     elif mode.startswith('lora'):
         ### START CODE HERE ###
-        pass
+        params = [parameter for module in model.modules() if isinstance(module, LoRAConv1DWrapper)
+            for name, parameter in module.named_parameters() if name in ["A", "B"]]
+        return params
         ### END CODE HERE ###
     else:
         raise NotImplementedError()
@@ -126,13 +135,23 @@ def get_loss(logits: torch.tensor, targets: torch.tensor) -> torch.tensor:
     """
 
     loss = None
+    logits = logits.to(DEVICE)
+    targets = targets.to(DEVICE)
     if logits.dim() == 2:
         ### START CODE HERE ###
-        pass
+        loss = F.cross_entropy(input=logits, target=targets)
+
         ### END CODE HERE ###
     elif logits.dim() == 3:
         ### START CODE HERE ###
-        pass
+        logits = logits[:, :-1, :]
+        targets = targets[:, 1:]
+
+        targets = targets.view(-1, 1)
+        logits = logits.view(-1, logits.shape[-1])
+
+        idx = (targets != -100).nonzero(as_tuple=True)[0]
+        loss = F.cross_entropy(input=logits[idx], target=targets[idx].squeeze())
         ### END CODE HERE ###
     else:
         raise ValueError(f'Logits should either be 2-dim (for classification) or 3-dim (for generation); got {logits.dim()}')
@@ -162,14 +181,25 @@ def get_acc(logits, targets):
       A *scalar* representing the average exact-match accuracy over all non-masked batch 
         elements (and sequence timesteps, if applicable)
     """
-
+    logits = logits.to(DEVICE)
+    targets = targets.to(DEVICE)
     if logits.dim() == 2:
         ### START CODE HERE ###
-        pass
+        acc = (logits.argmax(dim=1) == targets).type(torch.float).mean()
+        return acc.item()
         ### END CODE HERE ###
     elif logits.dim() == 3:
         ### START CODE HERE ###
-        pass
+        logits = logits[:, :-1, :]
+        targets = targets[:, 1:]
+
+        targets = targets.view(-1, 1)
+        logits = logits.view(-1, logits.shape[-1])
+
+        idx = (targets != -100).nonzero(as_tuple=True)[0]
+
+        acc = (logits[idx].argmax(dim=1) == targets[idx].squeeze()).type(torch.float).mean()
+        return acc.item()
         ### END CODE HERE ###
     else:
         raise ValueError(f'Logits should either be 2-dim (for classification) or 3-dim (for generation); got {logits.dim()}')
@@ -265,7 +295,17 @@ def tokenize_gpt2_batch(tokenizer, x, y):
     tokenized_sequences = None
 
     ### START CODE HERE ###
-    pass
+    tokens_y = tokenizer(y, return_tensors='pt', padding=True)
+    tokenized_sequences = tokenizer([x_ + y_ for x_, y_ in zip(x, y)], return_tensors='pt', padding=True)
+    tokenized_sequences["labels"] = torch.ones_like(tokenized_sequences["attention_mask"]) * -100
+
+    len_sequences = tokenized_sequences["attention_mask"].sum(dim=1)
+    len_tokens_y = tokens_y["attention_mask"].sum(dim=1)
+
+    for idx in range(tokenized_sequences["labels"].shape[0]):
+        tokenized_sequences["labels"][idx, len_sequences[idx] - len_tokens_y[idx]:len_sequences[idx]] = (
+            tokens_y["input_ids"][idx, :len_tokens_y[idx]]
+        )
     ### END CODE HERE ###
     
     return tokenized_sequences.to(DEVICE)
@@ -323,7 +363,25 @@ def ft_gpt2(model, tok, x, y, mode, dataset, batch_size=8, grad_accum=8):
         # Note: the ** operator will unpack a dictionary into keyword arguments to a function (such as your model)
         #############################
         ### START CODE HERE ###
-        pass
+        # Step 1
+        batch_x = [x[ind] for ind in batch_idxs]
+        batch_y = [y[ind] for ind in batch_idxs]
+
+        # Step 2
+        tokenized_sequences = tokenize_gpt2_batch(tok, batch_x, batch_y)
+
+        # Step 3
+        output = model(tokenized_sequences['input_ids'].to(DEVICE), use_cache=False)
+        loss = get_loss(output.logits, tokenized_sequences["labels"].to(DEVICE))
+
+        # Step 4
+        loss = loss / grad_accum
+        loss.backward()
+
+        # Step 5
+        if step % grad_accum == 0:
+            optimizer.step()
+            optimizer.zero_grad()
         ### END CODE HERE ###
 
         if step % (grad_accum * 5) == 0:
